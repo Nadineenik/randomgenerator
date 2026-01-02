@@ -1,0 +1,350 @@
+package nadinee.randomgenerator
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        Repository.init(this)
+
+        setContent {
+            MaterialTheme {
+                val navController = rememberNavController()
+                Scaffold(
+                    bottomBar = {
+                        BottomNavigation {
+                            BottomNavigationItem(
+                                selected = navController.currentDestination?.route == "generator",
+                                onClick = { navController.navigate("generator") },
+                                icon = { Icon(Icons.Default.Refresh, contentDescription = "Генератор") },
+                                label = { Text("Генератор") }
+                            )
+                            BottomNavigationItem(
+                                selected = navController.currentDestination?.route == "settings",
+                                onClick = { navController.navigate("settings") },
+                                icon = { Icon(Icons.Default.Settings, contentDescription = "Настройки") },
+                                label = { Text("Настройки") }
+                            )
+                        }
+                    }
+                ) { padding ->
+                    NavHost(navController, startDestination = "generator", modifier = Modifier.padding(padding)) {
+                        composable("generator") { GeneratorScreen() }
+                        composable("settings") { SettingsScreen() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Serializable
+data class Rule(
+    val number: Int,
+    val minPos: Int,
+    val maxPos: Int
+)
+
+object Repository {
+    private var _rules = mutableListOf<Rule>()
+    private var _enabledSpecial = false
+
+    val rules: List<Rule> get = _rules.toList()
+    val enabledSpecial: Boolean get = _enabledSpecial
+
+    fun init(context: Context) {
+        _rules.clear()
+        _rules.addAll(Storage.loadRules(context))
+        _enabledSpecial = Storage.loadEnabled(context)
+    }
+
+    fun addRule(rule: Rule, context: Context) {
+        _rules.add(rule)
+        Storage.saveRules(context, _rules)
+    }
+
+    fun deleteRule(index: Int, context: Context) {
+        _rules.removeAt(index)
+        Storage.saveRules(context, _rules)
+    }
+
+    fun setEnabled(enabled: Boolean, context: Context) {
+        _enabledSpecial = enabled
+        Storage.saveEnabled(context, enabled)
+    }
+}
+
+object Storage {
+    private const val FILE_RULES = "rules.json"
+    private const val FILE_ENABLED = "enabled.txt"
+
+    private val json = Json { prettyPrint = true }
+
+    fun saveRules(context: Context, rules: List<Rule>) {
+        val file = File(context.filesDir, FILE_RULES)
+        file.writeText(json.encodeToString(rules))
+    }
+
+    fun loadRules(context: Context): List<Rule> {
+        val file = File(context.filesDir, FILE_RULES)
+        return if (file.exists()) json.decodeFromString(file.readText()) else emptyList()
+    }
+
+    fun saveEnabled(context: Context, enabled: Boolean) {
+        val file = File(context.filesDir, FILE_ENABLED)
+        file.writeText(enabled.toString())
+    }
+
+    fun loadEnabled(context: Context): Boolean {
+        val file = File(context.filesDir, FILE_ENABLED)
+        return if (file.exists()) file.readText().toBoolean() else false
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GeneratorScreen() {
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    var min by remember { mutableStateOf(1) }
+    var max by remember { mutableStateOf(24) }
+    var count by remember { mutableStateOf(24) }  // по умолчанию весь диапазон
+
+    var generated by remember { mutableStateOf(listOf<Int>()) }
+
+    // Автоматическое обновление
+    val enabledSpecial by snapshotFlow { Repository.enabledSpecial }
+        .collectAsState(initial = Repository.enabledSpecial)
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top
+    ) {
+        Text("Генератор случайных чисел", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("От: ")
+            OutlinedTextField(
+                value = min.toString(),
+                onValueChange = { min = it.toIntOrNull() ?: 1 },
+                modifier = Modifier.width(100.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("До: ")
+            OutlinedTextField(
+                value = max.toString(),
+                onValueChange = { max = it.toIntOrNull() ?: 24 },
+                modifier = Modifier.width(100.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Количество: ")
+            OutlinedTextField(
+                value = count.toString(),
+                onValueChange = { count = it.toIntOrNull() ?: 24 },
+                modifier = Modifier.width(100.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(onClick = {
+            if (min > max || count < 1 || count > (max - min + 1)) {
+                scope.launch {
+                    snackbarHostState.showSnackbar("Неверные параметры")
+                }
+                return@Button
+            }
+
+            generated = generateNumbers(min, max, count, enabledSpecial)
+        }) {
+            Text("Сгенерировать")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (generated.isNotEmpty()) {
+            Text("Результат:")
+            LazyColumn {
+                items(generated) { num ->
+                    Text(num.toString(), fontSize = 18.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen() {
+    val context = LocalContext.current
+    var enabled by remember { mutableStateOf(Repository.enabledSpecial) }
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    // Автоматическое обновление списка правил
+    val rules by snapshotFlow { Repository.rules }
+        .collectAsState(initial = Repository.rules)
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Настройки", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = enabled, onCheckedChange = {
+                enabled = it
+                Repository.setEnabled(it, context)
+            })
+            Text("Включить особые условия")
+        }
+
+        if (enabled) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("Правила:")
+
+            LazyColumn {
+                itemsIndexed(rules) { index, rule ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Число ${rule.number}: позиция ${rule.minPos}-${rule.maxPos}")
+                        Spacer(modifier = Modifier.weight(1f))
+                        IconButton(onClick = { Repository.deleteRule(index, context) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Удалить")
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = { showAddDialog = true }) {
+                Text("+ Добавить правило")
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        var number by remember { mutableStateOf("") }
+        var minPos by remember { mutableStateOf("") }
+        var maxPos by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("Добавить правило") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = number,
+                        onValueChange = { number = it },
+                        label = { Text("Число") }
+                    )
+                    OutlinedTextField(
+                        value = minPos,
+                        onValueChange = { minPos = it },
+                        label = { Text("От позиции") }
+                    )
+                    OutlinedTextField(
+                        value = maxPos,
+                        onValueChange = { maxPos = it },
+                        label = { Text("До позиции") }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val num = number.toIntOrNull() ?: return@TextButton
+                    val minP = minPos.toIntOrNull() ?: return@TextButton
+                    val maxP = maxPos.toIntOrNull() ?: return@TextButton
+
+                    Repository.addRule(Rule(num, minP, maxP), context)
+                    showAddDialog = false
+                }) {
+                    Text("Добавить")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false }) {
+                    Text("Отмена")
+                }
+            }
+        )
+    }
+}
+
+private fun generateNumbers(min: Int, max: Int, count: Int, enabledSpecial: Boolean): List<Int> {
+    val allNumbers = (min..max).toMutableList()
+    if (count > allNumbers.size) return emptyList()
+
+    if (!enabledSpecial || Repository.rules.isEmpty()) {
+        allNumbers.shuffle()
+        return allNumbers.take(count)
+    }
+
+    val N = count
+    val positions = mutableMapOf<Int, Int>()  // позиция to число
+
+    // Назначаем специальные числа
+    for (rule in Repository.rules) {
+        val possiblePos = (rule.minPos..rule.maxPos).filter { !positions.containsKey(it) }
+        if (possiblePos.isEmpty()) {
+            // Конфликт
+            return listOf()  // или обработать ошибку
+        }
+        val pos = possiblePos.random()
+        positions[pos] = rule.number
+        allNumbers.remove(rule.number)
+    }
+
+    // Заполняем остальные позиции
+    allNumbers.shuffle()
+    var index = 0
+    val result = MutableList(N) { 0 }
+    for (i in 1..N) {
+        if (positions.containsKey(i)) {
+            result[i-1] = positions[i]!!
+        } else {
+            result[i-1] = allNumbers[index++]
+        }
+    }
+
+    return result
+}
