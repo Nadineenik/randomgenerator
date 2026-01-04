@@ -2,7 +2,7 @@ package nadinee.randomgenerator.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -13,9 +13,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import nadinee.randomgenerator.data.Repository
 import nadinee.randomgenerator.model.Rule
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,10 +28,11 @@ fun SettingsScreen() {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Автоматическое обновление состояния галочки и списка правил
     var enabledSpecial by remember { mutableStateOf(Repository.enabledSpecial) }
+
+    // Безопасный collect с lifecycle
     val rules by snapshotFlow { Repository.rules }
-        .collectAsState(initial = Repository.rules)
+        .collectAsStateWithLifecycle(initialValue = Repository.rules)
 
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -49,7 +54,6 @@ fun SettingsScreen() {
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Галочка "Включить особые условия"
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -87,7 +91,7 @@ fun SettingsScreen() {
                     )
                 } else {
                     LazyColumn {
-                        items(rules) { rule ->
+                        itemsIndexed(rules) { index, rule ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -116,7 +120,7 @@ fun SettingsScreen() {
 
                                     IconButton(
                                         onClick = {
-                                            Repository.deleteRule(rules.indexOf(rule), context)
+                                            Repository.deleteRule(index, context)
                                         }
                                     ) {
                                         Icon(
@@ -143,7 +147,7 @@ fun SettingsScreen() {
         }
     }
 
-    // === Диалог добавления правила ===
+    // Диалог добавления правила
     if (showAddDialog) {
         var numberText by remember { mutableStateOf("") }
         var minPosText by remember { mutableStateOf("") }
@@ -151,16 +155,15 @@ fun SettingsScreen() {
 
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
-            title = {
-                Text("Новое правило")
-            },
+            title = { Text("Добавить правило") },
             text = {
                 Column {
                     OutlinedTextField(
                         value = numberText,
-                        onValueChange = { numberText = it },
+                        onValueChange = { if (it.all { char -> char.isDigit() } || it.isEmpty()) numberText = it },
                         label = { Text("Число (например, 13)") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -168,9 +171,10 @@ fun SettingsScreen() {
 
                     OutlinedTextField(
                         value = minPosText,
-                        onValueChange = { minPosText = it },
+                        onValueChange = { if (it.all { char -> char.isDigit() } || it.isEmpty()) minPosText = it },
                         label = { Text("От позиции") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -178,9 +182,10 @@ fun SettingsScreen() {
 
                     OutlinedTextField(
                         value = maxPosText,
-                        onValueChange = { maxPosText = it },
+                        onValueChange = { if (it.all { char -> char.isDigit() } || it.isEmpty()) maxPosText = it },
                         label = { Text("До позиции") },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -192,25 +197,25 @@ fun SettingsScreen() {
                         val minPos = minPosText.toIntOrNull()
                         val maxPos = maxPosText.toIntOrNull()
 
-                        when {
-                            number == null -> {
-                                scope.launch { snackbarHostState.showSnackbar("Введите корректное число") }
-                            }
-                            minPos == null || maxPos == null -> {
-                                scope.launch { snackbarHostState.showSnackbar("Введите корректные позиции") }
-                            }
-                            minPos > maxPos -> {
-                                scope.launch { snackbarHostState.showSnackbar("От позиции должно быть ≤ До позиции") }
-                            }
-                            else -> {
-                                val newRule = Rule(number, minPos, maxPos)
-                                Repository.addRule(newRule, context)
-                                showAddDialog = false
-                                numberText = ""
-                                minPosText = ""
-                                maxPosText = ""
-                            }
+                        if (number == null || numberText.isBlank()) {
+                            scope.launch { snackbarHostState.showSnackbar("Введите число") }
+                            return@TextButton
                         }
+                        if (minPos == null || minPosText.isBlank()) {
+                            scope.launch { snackbarHostState.showSnackbar("Введите 'От позиции'") }
+                            return@TextButton
+                        }
+                        if (maxPos == null || maxPosText.isBlank()) {
+                            scope.launch { snackbarHostState.showSnackbar("Введите 'До позиции'") }
+                            return@TextButton
+                        }
+                        if (minPos > maxPos) {
+                            scope.launch { snackbarHostState.showSnackbar("От позиции должно быть ≤ До позиции") }
+                            return@TextButton
+                        }
+
+                        Repository.addRule(Rule(number, minPos, maxPos), context)
+                        showAddDialog = false
                     }
                 ) {
                     Text("Добавить")

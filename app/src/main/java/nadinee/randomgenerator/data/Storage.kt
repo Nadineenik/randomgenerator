@@ -15,16 +15,17 @@ object Storage {
 
     fun saveRules(context: Context, rules: List<Rule>) {
         val file = File(context.filesDir, FILE_RULES)
-        file.writeText(json.encodeToString(rules))
+        file.writeText(json.encodeToString<List<Rule>>(rules))  // ← Добавь <List<Rule>>
     }
 
     fun loadRules(context: Context): List<Rule> {
         val file = File(context.filesDir, FILE_RULES)
         return if (file.exists()) {
-            json.decodeFromString(file.readText())
+            json.decodeFromString<List<Rule>>(file.readText())  // ← Добавь <List<Rule>>
         } else emptyList()
     }
 
+    // enabled без изменений
     fun saveEnabled(context: Context, enabled: Boolean) {
         val file = File(context.filesDir, FILE_ENABLED)
         file.writeText(enabled.toString())
