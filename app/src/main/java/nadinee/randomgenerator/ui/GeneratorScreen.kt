@@ -171,42 +171,72 @@ fun GeneratorScreen() {
                 )
             }
 
-            // Ручная сетка 5 колонок — без вложенного скролла и без краша
-            items(result.chunked(5)) { rowNumbers ->
+            // Сетка 5 колонок с маленькой цифрой как ярлычком в левом верхнем углу рамки
+            items(result.chunked(4)) { rowNumbers ->
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 ) {
-                    // Заполняем реальные числа
-                    rowNumbers.forEach { number ->
+                    rowNumbers.forEachIndexed { _, number ->
+                        val position = result.indexOf(number) + 1  // Порядковый номер в очереди
+
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .aspectRatio(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFE3F2FD))
-                                .border(1.dp, Color(0xFFBBDEFB), RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = number.toString(),
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1976D2)
-                            )
+                            // Основной квадратик с номером человека
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(top = 8.dp, start = 8.dp)  // отступ под ярлычок
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFFF8FAFC))
+                                    .border(2.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = number.toString(),
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E293B)
+                                )
+                            }
+
+                            // Ярлычок с порядковым номером — вынесен в левый верхний угол
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .offset(x = 4.dp, y = (-4).dp)  // чуть выходит за рамку
+                                    .background(
+                                        color = Color(0xFF0066FF),
+                                        shape = RoundedCornerShape(bottomEnd = 8.dp, topStart = 8.dp)
+                                    )
+                                    .size(24.dp)
+                            ) {
+                                Text(
+                                    text = position.toString(),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.align(Alignment.Center)
+                                )
+                            }
                         }
                     }
 
-                    // Добавляем пустые Spacer для неполных рядов
-                    repeat(5 - rowNumbers.size) {
+                    // Заполнитель для неполных рядов
+                    repeat(4 - rowNumbers.size) {
                         Spacer(modifier = Modifier.weight(1f))
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
-    }
+
+    SnackbarHost(hostState = snackbarHostState)
+}
